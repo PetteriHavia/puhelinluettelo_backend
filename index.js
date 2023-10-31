@@ -4,16 +4,16 @@ const morgan = require("morgan");
 const cors = require("cors");
 const Person = require("./models/people");
 
-
 const errorHandler = (error, req, res, next) => {
   console.log(error.message);
 
   if (error.name === "CastError") {
     return res.status(400).send({ error: "Id not found" });
+  } else if (error.name === "ValidationError") {
+    return res.status(400).json({ error: error.message });
   }
   next(error);
 };
-
 
 //MIDDLEWARE
 app.use(express.json());
@@ -37,14 +37,21 @@ app.get("/api/persons", (request, response) => {
     });
 });
 
-app.get("/info", (req, res) => {
+app.get("/info", async (req, res) => {
   const date = new Date();
-  const info = `
-  <div>
-    <p>Phonebook has info for ${persons.length}<p>
-    <p>${date}</p>
-  </div>`;
-  res.send(info);
+  Person.countDocuments({})
+    .then((count) => {
+      const info = `
+        <div>
+          <p>Phonebook has info for ${count}<p>
+          <p>${date}</p>
+        </div>`;
+      res.send(info);
+    })
+    .catch((error) => {
+      console.log("Error counting documents", error);
+      res.status(500).json({ error: "Internal server error" });
+    });
 });
 
 app.get("/api/persons/:id", (req, res, next) => {
@@ -67,46 +74,38 @@ app.delete("/api/persons/:id", (req, res, next) => {
     .catch((error) => next(error));
 });
 
-
 //ADD
-app.post('/api/persons', (req, res) => {
+app.post("/api/persons", (req, res, next) => {
   const body = req.body;
-
-  if (!body.name || !body.number) {
-    return res.status(404).json({ error: "Missing content" });
-  }
-
 
   const newPerson = new Person({
     name: body.name,
     number: body.number,
   });
 
-  newPerson.save().then((savedPerson) => {
-    res.json(savedPerson);
-  });
+  newPerson
+    .save()
+    .then((savedPerson) => {
+      res.json(savedPerson);
+    })
+    .catch((error) => next(error));
 });
 
-
 ///PUT
-app.put('/api/persons/:id', (req, res, next) => {
-  const body = req.body;
-  
-  const updatedPerson = {
-    name: body.name,
-    number : body.number
-  }
+app.put("/api/persons/:id", (req, res, next) => {
 
-  Person.findByIdAndUpdate(req.params.id, updatedPerson, {new: true})
+  const { name, number } = req.body;
+
+  Person.findByIdAndUpdate(
+    req.params.id,
+    { name, number },
+    { new: true, runValidators: true, context: "query" }
+  )
     .then(updatedPerson => {
-      if(!updatedPerson) {
-        return res.status(404).end()
-      }
       res.json(updatedPerson);
     })
-    .catch(error => next(error))
-})
-
+    .catch(error => next(error));
+});
 
 app.use(errorHandler);
 
